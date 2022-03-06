@@ -1,0 +1,169 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Parameters" : {
+    "InstanceType" : {
+	  "Default" : "m5.xlarge",
+      "Type" : "String"
+    },
+    "ReleaseLabel" : {
+	  "Default": "emr-5.32.0",
+      "Type" : "String"
+    },
+    "SubnetId" : {
+	  "Default":"subnet-6335a242",
+      "Type" : "String"
+    },
+    "TerminationProtected" : {
+
+      "Type" : "String",
+      "Default" : "false"
+    },
+    "ElasticMapReducePrincipal" : {
+	  "Default" : "elasticmapreduce.amazonaws.com",
+      "Type" : "String"
+    },
+    "Ec2Principal" : {
+	  "Default" : "ec2.amazonaws.com",
+      "Type" : "String"
+    },
+	"EMRLogDir": {
+            "Description": "Log Dir for the EMR cluster",
+			"Default" : "s3://my-emr-logs/elasticmapreduce/",
+            "Type": "String"
+        },
+	"KeyName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH to the instances",
+	        "Default" : "project",
+            "Type": "String"
+        }
+  },
+  "Resources": {
+    "cluster": {
+      "Type": "AWS::EMR::Cluster",
+      "Properties": {
+      "Applications":[{
+                        "Name": "Hadoop"
+                    },
+					{
+                        "Name": "Hive"
+                    },
+					{
+                        "Name": "Spark"
+                    },
+					{
+                        "Name": "ZooKeeper"
+                    }
+					],
+				
+        "Instances": {
+
+          "MasterInstanceGroup": {
+            "InstanceCount": 1,
+            "InstanceType": {"Ref" : "InstanceType"},
+            "Market": "ON_DEMAND",
+            "Name": "Master"
+          },
+            
+         "CoreInstanceGroup": {
+            "InstanceCount": 1,
+            "InstanceType": {"Ref" : "InstanceType"},
+            "Market": "ON_DEMAND",
+            "Name": "Core"
+          },
+          "TerminationProtected" : {"Ref" : "TerminationProtected"},
+          "Ec2SubnetId" : {"Ref" : "SubnetId"},
+		  "Ec2KeyName": {"Ref": "KeyName"}
+        },
+		"LogUri": {
+                    "Ref": "EMRLogDir"
+                },
+        "Name": "pubgAnalysisCluster",
+        "JobFlowRole" : {"Ref": "emrEc2InstanceProfile"},
+        "ServiceRole" : {"Ref": "emrRole"},
+        "ReleaseLabel" : {"Ref" : "ReleaseLabel"},
+
+        "VisibleToAllUsers" : true,
+        "Tags": [
+          {
+            "Key": "key1",
+            "Value": "value1"
+          }
+
+        ]
+      }
+    },
+    "emrRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2008-10-17",
+          "Statement": [
+            {
+              "Sid": "",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": {"Ref" : "ElasticMapReducePrincipal"}
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": ["arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceRole"]
+      }
+    },
+    "emrEc2Role": {
+      "Type": "AWS::IAM::Role",
+
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2008-10-17",
+          "Statement": [
+            {
+              "Sid": "",
+
+              "Effect": "Allow",
+              "Principal": {
+                "Service": {"Ref" : "Ec2Principal"}
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": ["arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceforEC2Role"]
+      }
+    },
+    "emrEc2InstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [ {
+          "Ref": "emrEc2Role"
+        } ]
+      }
+    },
+     "SparkStep": {
+            "Properties": {
+                "ActionOnFailure": "CONTINUE",
+                "HadoopJarStep": {
+                    "Args": [
+                        "spark-submit",
+                        "--deploy-mode",
+                        "cluster",
+                        "--conf",
+                        "spark.sql.catalogImplementation=hive",
+                        "s3://project-pubg/script_pubg/Pubg_Hive_Table_Creator.py"
+                    ],
+                    "Jar": "command-runner.jar"  
+                },
+                "JobFlowId": {
+                    "Ref": "cluster"
+                },
+                "Name": "SparkStep"
+            },
+            "Type": "AWS::EMR::Step"
+        }
+	 
+  }
+}
